@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  test-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: chatops
+      POSTGRES_PASSWORD: chatops
+      POSTGRES_DB: chatops_test
+    ports:
+      - "5433:5432" 

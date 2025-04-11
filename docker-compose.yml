@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_SIGNING_KEY=${SLACK_SIGNING_KEY}
+    depends_on:
+      - db
+    volumes:
+      - ./config:/app/config
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: chatops
+      POSTGRES_PASSWORD: chatops
+      POSTGRES_DB: chatops
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data: 

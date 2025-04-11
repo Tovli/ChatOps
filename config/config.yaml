@@ -1,0 +1,18 @@
+server:
+  port: 8080
+  host: "0.0.0.0"
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "chatops"
+  password: "chatops"
+  dbname: "chatops"
+  sslmode: "disable"
+
+github:
+  token: "${GITHUB_TOKEN}"
+
+slack:
+  bot_token: "${SLACK_BOT_TOKEN}"
+  signing_key: "${SLACK_SIGNING_KEY}" 
