@@ -2,7 +2,8 @@ package ports
 
 import (
 	"context"
-	"github.com/yourusername/chatops/internal/core/domain"
+
+	"github.com/Tovli/chatops/internal/core/domain"
 )
 
 type RepositoryService interface {
@@ -11,4 +12,4 @@ type RepositoryService interface {
 	ListRepositories(ctx context.Context) ([]*domain.Repository, error)
 	GetRepositoryPipelines(ctx context.Context, name string) ([]domain.Pipeline, error)
 	SetDefaultPipeline(ctx context.Context, repoName, pipelineName string) error
-} 
+}

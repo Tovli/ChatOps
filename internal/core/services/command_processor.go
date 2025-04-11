@@ -4,20 +4,39 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/your-project/domain"
-	"github.com/your-project/ports"
-	"github.com/your-project/rbac"
-	"github.com/your-project/audit"
-	"github.com/your-project/zap"
+	"github.com/Tovli/chatops/internal/core/domain"
+	"github.com/Tovli/chatops/internal/core/ports"
+	"github.com/Tovli/chatops/internal/rbac"
+	"go.uber.org/zap"
 )
 
 type CommandProcessor struct {
 	logger      *zap.Logger
 	rbac        *rbac.Service
 	workflow    ports.WorkflowPort
-	audit       *audit.Service
+	audit       *ports.AuditService
 	repoService ports.RepositoryService
 	githubPort  ports.GitHubPort
+}
+
+// NewCommandProcessor creates a new instance of CommandProcessor
+func NewCommandProcessor(logger *zap.Logger, repoService ports.RepositoryService, githubPort ports.GitHubPort) (*CommandProcessor, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+	if repoService == nil {
+		return nil, fmt.Errorf("repository service is required")
+	}
+	if githubPort == nil {
+		return nil, fmt.Errorf("github port is required")
+	}
+
+	return &CommandProcessor{
+		logger:      logger,
+		repoService: repoService,
+		githubPort:  githubPort,
+		// Note: rbac, workflow, and audit services are optional and can be initialized later if needed
+	}, nil
 }
 
 func (cp *CommandProcessor) ProcessCommand(ctx context.Context, cmd *domain.Command) (*domain.CommandResult, error) {
@@ -92,6 +111,6 @@ func (cp *CommandProcessor) handleVerifyRepository(ctx context.Context, cmd *dom
 	return cp.githubPort.TriggerWorkflow(ctx, &domain.WorkflowTrigger{
 		Repository: repo.Name,
 		Workflow:   defaultPipeline.Path,
-		Type:      "verification",
+		Type:       "verification",
 	})
-} 
+}

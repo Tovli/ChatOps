@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tovli/chatops/internal/core/domain"
+	"github.com/Tovli/chatops/internal/infrastructure/config"
 	"github.com/google/go-github/v45/github"
-	"github.com/your-project/config"
-	"github.com/your-project/domain"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 )
@@ -18,11 +18,17 @@ type GitHubAdapter struct {
 	client *github.Client
 }
 
-type Config struct {
-	Token string
-}
+func NewGitHubAdapter(logger *zap.Logger, config *config.GitHubConfig) (*GitHubAdapter, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+	if config == nil {
+		return nil, fmt.Errorf("config is required")
+	}
+	if config.Token == "" {
+		return nil, fmt.Errorf("GitHub token is required")
+	}
 
-func NewGitHubAdapter(logger *zap.Logger, config *Config) (*GitHubAdapter, error) {
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: config.Token},
 	)
@@ -80,7 +86,7 @@ func (a *GitHubAdapter) getRepositoryWorkflows(ctx context.Context, owner, repo 
 func (a *GitHubAdapter) TriggerWorkflow(ctx context.Context, trigger *domain.WorkflowTrigger) (*domain.CommandResult, error) {
 	owner, repo := parseGitHubURL(trigger.Repository)
 
-	_, _, err := a.client.Actions.CreateWorkflowDispatchEventByFileName(
+	resp, err := a.client.Actions.CreateWorkflowDispatchEventByFileName(
 		ctx,
 		owner,
 		repo,
@@ -95,6 +101,13 @@ func (a *GitHubAdapter) TriggerWorkflow(ctx context.Context, trigger *domain.Wor
 		return &domain.CommandResult{
 			Status:  "error",
 			Message: fmt.Sprintf("Failed to trigger workflow: %v", err),
+		}, nil
+	}
+
+	if resp.StatusCode >= 400 {
+		return &domain.CommandResult{
+			Status:  "error",
+			Message: fmt.Sprintf("Failed to trigger workflow: HTTP %d", resp.StatusCode),
 		}, nil
 	}
 

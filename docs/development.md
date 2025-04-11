@@ -89,17 +89,48 @@ EOL
 
 ### Local Development Environment
 
-1. Start development services:
+1. Start PostgreSQL using Docker:
+
+   > **Note for Windows Git Bash users**: Make sure Docker Desktop is running before executing these commands.
+
+   ```bash
+   # If using Windows Git Bash, ensure Docker Desktop is running first
+   docker run --name mypostgres \
+     -e POSTGRES_USER=chatops \
+     -e POSTGRES_PASSWORD=chatops \
+     -e POSTGRES_DB=chatops_test \
+     -p 5432:5432 \
+     -d postgres:latest
+
+   # Verify the container is running
+   docker ps | grep mypostgres
+   ```
+
+   If you see the error `docker: error during connect: ... dockerDesktopLinuxEngine: The system cannot find the file specified`, please:
+   1. Open Docker Desktop
+   2. Wait for it to fully start
+   3. Try the command again
+
+2. Run database migrations:
+   ```bash
+   # For the test database
+   migrate -path migrations -database "postgresql://chatops:chatops@localhost:5432/chatops_test?sslmode=disable" up
+
+   # Verify migration status
+   migrate -path migrations -database "postgresql://chatops:chatops@localhost:5432/chatops_test?sslmode=disable" version
+   ```
+
+   > **Note**: If you get a "migrate: not found" error, install it first:
+   > ```bash
+   > go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+   > ```
+
+3. Start development services:
 ```bash
 make docker-up
 ```
 
-2. Run database migrations:
-```bash
-make migrate-up
-```
-
-3. Start the application:
+4. Start the application:
 ```bash
 make run
 ```

@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/yourusername/chatops/internal/core/messenger"
-	"github.com/yourusername/chatops/internal/platform/config"
+	"github.com/Tovli/chatops/internal/core/messenger"
+	"github.com/Tovli/chatops/internal/platform/config"
 	"go.uber.org/zap"
 )
 
@@ -24,4 +24,4 @@ func New(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, err
 func (a *App) Run(ctx context.Context) error {
 	// TODO: Initialize and run components
 	return nil
-} 
+}

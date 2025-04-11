@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tovli/chatops/internal/core/domain"
+	"github.com/Tovli/chatops/internal/infrastructure/storage/postgres"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/yourusername/chatops/internal/core/domain"
-	"github.com/yourusername/chatops/internal/infrastructure/storage/postgres"
 )
 
 func setupTestDB(t *testing.T) (*sql.DB, func()) {

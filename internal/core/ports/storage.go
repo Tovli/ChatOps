@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/Tovli/ChatOps/internal/core/domain"
+	"github.com/Tovli/chatops/internal/core/domain"
 )
 
 type RepositoryStorage interface {

@@ -1,11 +1,26 @@
 package middleware
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 	"time"
 
 	"go.uber.org/zap"
 )
+
+type requestIDKey struct{}
+
+func generateRequestID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func addRequestIDToContext(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, requestIDKey{}, requestID)
+}
 
 type ResponseWriter struct {
 	http.ResponseWriter

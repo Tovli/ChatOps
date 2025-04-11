@@ -1,25 +1,49 @@
 package slack
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/Tovli/chatops/internal/core/domain"
+	"github.com/Tovli/chatops/internal/core/services"
+	"github.com/Tovli/chatops/internal/infrastructure/config"
 	"github.com/slack-go/slack"
-	"github.com/your-project/config"
-	"github.com/your-project/services"
-	"github.com/your-project/validator"
-	"github.com/your-project/zap"
-	"github.com/yourusername/chatops/internal/core/domain"
+	"go.uber.org/zap"
 )
 
 type SlackAdapter struct {
 	logger    *zap.Logger
 	config    *config.SlackConfig
 	processor *services.CommandProcessor
+	client    *slack.Client
+}
+
+// NewSlackAdapter creates a new instance of SlackAdapter
+func NewSlackAdapter(logger *zap.Logger, config *config.SlackConfig, processor *services.CommandProcessor) (*SlackAdapter, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+	if config == nil {
+		return nil, fmt.Errorf("config is required")
+	}
+	if processor == nil {
+		return nil, fmt.Errorf("command processor is required")
+	}
+	if config.BotToken == "" {
+		return nil, fmt.Errorf("slack bot token is required")
+	}
+
+	client := slack.New(config.BotToken)
+
+	return &SlackAdapter{
+		logger:    logger,
+		config:    config,
+		processor: processor,
+		client:    client,
+	}, nil
 }
 
 func (a *SlackAdapter) HandleSlashCommand(w http.ResponseWriter, r *http.Request) {
@@ -102,4 +126,4 @@ func (a *SlackAdapter) buildSlackResponse(result *domain.CommandResult) map[stri
 	}
 
 	return response
-} 
+}

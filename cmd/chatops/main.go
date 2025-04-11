@@ -9,14 +9,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Tovli/chatops/internal/adapters/github"
+	"github.com/Tovli/chatops/internal/adapters/slack"
+	"github.com/Tovli/chatops/internal/core/ports"
+	"github.com/Tovli/chatops/internal/core/services"
+	"github.com/Tovli/chatops/internal/infrastructure/config"
+	"github.com/Tovli/chatops/internal/infrastructure/health"
+	"github.com/Tovli/chatops/internal/infrastructure/middleware"
+	"github.com/Tovli/chatops/internal/infrastructure/storage/postgres"
 	"github.com/gorilla/mux"
-	"github.com/yourusername/chatops/internal/adapters/github"
-	"github.com/yourusername/chatops/internal/adapters/slack"
-	"github.com/yourusername/chatops/internal/core/services"
-	"github.com/yourusername/chatops/internal/infrastructure/config"
-	"github.com/yourusername/chatops/internal/infrastructure/health"
-	"github.com/yourusername/chatops/internal/infrastructure/middleware"
-	"github.com/yourusername/chatops/internal/infrastructure/storage/postgres"
 	"go.uber.org/zap"
 )
 
@@ -36,27 +37,45 @@ func main() {
 	if err != nil {
 		logger.Fatal("failed to connect to database", zap.Error(err))
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			logger.Error("failed to close database connection", zap.Error(err))
+		}
+	}()
 
 	// Initialize storage
 	storage := postgres.NewPostgresStorage(db)
 
-	// Initialize GitHub adapter
-	githubAdapter, err := github.NewGitHubAdapter(logger, &github.Config{
-		Token: cfg.GitHub.Token,
-	})
-	if err != nil {
-		logger.Fatal("failed to create GitHub adapter", zap.Error(err))
+	// Initialize repository service with optional GitHub integration
+	var githubPort ports.GitHubPort
+	if cfg.GitHub.Token != "" {
+		githubAdapter, err := github.NewGitHubAdapter(logger, &cfg.GitHub)
+		if err != nil {
+			logger.Fatal("failed to create GitHub adapter", zap.Error(err))
+		}
+		githubPort = githubAdapter
 	}
 
-	// Initialize repository service
-	repoService := services.NewRepositoryService(logger, githubAdapter, storage)
+	repoService, err := services.NewRepositoryService(services.RepositoryServiceOptions{
+		Logger:     logger,
+		GitHubPort: githubPort, // May be nil if GitHub is not configured
+		Storage:    storage,
+	})
+	if err != nil {
+		logger.Fatal("failed to create repository service", zap.Error(err))
+	}
 
 	// Initialize command processor
-	cmdProcessor := services.NewCommandProcessor(logger, repoService, githubAdapter)
+	cmdProcessor, err := services.NewCommandProcessor(logger, repoService, githubPort)
+	if err != nil {
+		logger.Fatal("failed to create command processor", zap.Error(err))
+	}
 
 	// Initialize Slack adapter
-	slackAdapter := slack.NewSlackAdapter(logger, cfg.Slack, cmdProcessor)
+	slackAdapter, err := slack.NewSlackAdapter(logger, &cfg.Slack, cmdProcessor)
+	if err != nil {
+		logger.Fatal("failed to create Slack adapter", zap.Error(err))
+	}
 
 	// Initialize router with middleware
 	router := mux.NewRouter()
