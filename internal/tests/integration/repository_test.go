@@ -34,10 +34,17 @@ func terminateConnections(db *sql.DB, dbName string) error {
 
 func setupTestDB(t *testing.T) (*sql.DB, func()) {
 	dbName := generateUniqueDatabaseName()
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgresql://chatops:chatops@localhost:5432/postgres?sslmode=disable"
-	}
+
+	// Build connection string from environment variables
+	host := getEnvOrDefault("CHATOPS_DB_HOST", "localhost")
+	port := getEnvOrDefault("CHATOPS_DB_PORT", "5432")
+	user := getEnvOrDefault("CHATOPS_DB_USER", "chatops")
+	password := getEnvOrDefault("CHATOPS_DB_PASSWORD", "chatops")
+	sslmode := getEnvOrDefault("CHATOPS_DB_SSLMODE", "disable")
+
+	// Connection string for the postgres database
+	dbURL := fmt.Sprintf("postgresql://%s:%s@%s:%s/postgres?sslmode=%s",
+		user, password, host, port, sslmode)
 
 	// First connect to the postgres database to create our test database
 	rootDB, err := sql.Open("postgres", dbURL)
@@ -56,7 +63,8 @@ func setupTestDB(t *testing.T) (*sql.DB, func()) {
 	require.NoError(t, err)
 
 	// Now connect to our test database
-	testDBURL := fmt.Sprintf("postgresql://chatops:chatops@localhost:5432/%s?sslmode=disable", dbName)
+	testDBURL := fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=%s",
+		user, password, host, port, dbName, sslmode)
 	db, err := sql.Open("postgres", testDBURL)
 	require.NoError(t, err)
 
@@ -145,4 +153,12 @@ func TestRepositoryStorage(t *testing.T) {
 		assert.Equal(t, repo.URL, fetched.URL)
 		assert.Len(t, fetched.Pipelines, 1)
 	})
+}
+
+// Helper function to get environment variable with default value
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }

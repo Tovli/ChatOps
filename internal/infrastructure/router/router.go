@@ -29,6 +29,7 @@ func NewRouter(cfg *Config) *mux.Router {
 	// API routes
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 	apiRouter.HandleFunc("/slack/commands", cfg.SlackAdapter.HandleSlashCommand).Methods("POST")
+	apiRouter.HandleFunc("/slack/webhooks", cfg.SlackAdapter.HandleWebhook).Methods("POST")
 
 	return router
 }

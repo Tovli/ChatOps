@@ -40,7 +40,20 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("./config")
 
+	// Set environment variable mappings with CHATOPS_ prefix
+	viper.SetEnvPrefix("CHATOPS")
 	viper.AutomaticEnv()
+
+	// Map environment variables to config fields
+	viper.BindEnv("github.token", "CHATOPS_GITHUB_TOKEN")
+	viper.BindEnv("slack.bot_token", "CHATOPS_SLACK_BOT_TOKEN")
+	viper.BindEnv("slack.signing_key", "CHATOPS_SLACK_SIGNING_KEY")
+	viper.BindEnv("database.host", "CHATOPS_DB_HOST")
+	viper.BindEnv("database.port", "CHATOPS_DB_PORT")
+	viper.BindEnv("database.user", "CHATOPS_DB_USER")
+	viper.BindEnv("database.password", "CHATOPS_DB_PASSWORD")
+	viper.BindEnv("database.dbname", "CHATOPS_DB_NAME")
+	viper.BindEnv("database.sslmode", "CHATOPS_DB_SSLMODE")
 
 	if err := viper.ReadInConfig(); err != nil {
 		return nil, err

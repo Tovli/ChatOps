@@ -71,4 +71,46 @@
   - docs/
   - examples/
   - internal/
-  - pkg/ 
+  - pkg/
+
+## Environment Variable Management
+
+### godotenv Implementation
+- Package: github.com/joho/godotenv v1.5.1
+- Purpose: Loads environment variables from .env files with proper precedence
+- File Loading Order (highest to lowest priority):
+  1. OS environment variables (always take precedence)
+  2. `.env.{environment}.local` (e.g., .env.development.local)
+  3. `.env.local` (skipped in test environment)
+  4. `.env.{environment}` (e.g., .env.development)
+  5. `.env` (base configuration)
+
+### Environment Types
+- development: Local development environment
+- test: Testing environment (CI/CD, local tests)
+- staging: Pre-production environment
+- production: Live environment
+
+### Best Practices
+- Never commit .env files to version control
+- Use .env.example as a template
+- Store sensitive values in Azure Key Vault for production
+- Use environment-specific files for different configurations
+- Validate required environment variables on startup
+
+### Environment Variable Conventions
+- Prefix: CHATOPS_
+- Format: UPPERCASE_WITH_UNDERSCORES
+- Examples:
+  - CHATOPS_GITHUB_TOKEN
+  - CHATOPS_SLACK_BOT_TOKEN
+  - CHATOPS_SLACK_SIGNING_KEY
+  - CHATOPS_DB_HOST
+
+### Implementation Details
+- Custom wrapper in internal/infrastructure/env
+- Automatic environment detection
+- Graceful handling of missing files
+- Comprehensive logging of loaded files
+- Support for default values
+- Required variable validation 

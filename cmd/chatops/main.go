@@ -14,6 +14,7 @@ import (
 	"github.com/Tovli/chatops/internal/core/ports"
 	"github.com/Tovli/chatops/internal/core/services"
 	"github.com/Tovli/chatops/internal/infrastructure/config"
+	"github.com/Tovli/chatops/internal/infrastructure/env"
 	"github.com/Tovli/chatops/internal/infrastructure/health"
 	"github.com/Tovli/chatops/internal/infrastructure/router"
 	"github.com/Tovli/chatops/internal/infrastructure/storage/postgres"
@@ -24,6 +25,13 @@ func main() {
 	// Initialize logger
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
+
+	// Load environment variables
+	if err := env.LoadEnv(&env.Config{
+		Logger: logger,
+	}); err != nil {
+		logger.Fatal("failed to load environment variables", zap.Error(err))
+	}
 
 	// Load configuration
 	cfg, err := config.Load()
