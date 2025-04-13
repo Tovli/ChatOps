@@ -57,15 +57,23 @@ func NewSlackAdapter(logger *zap.Logger, config *config.SlackConfig, processor *
 func (a *SlackAdapter) HandleSlashCommand(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	cmd, err := slack.SlashCommandParse(r)
+	// Read body for signature verification
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		a.sendErrorResponse(w, "Invalid slash command", http.StatusBadRequest)
+		a.sendErrorResponse(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewBuffer(body)) // Replace the body for further reading
+
+	// Verify Slack signature
+	if err := a.verifySlackSignature(r, body); err != nil {
+		a.sendErrorResponse(w, "Invalid signature", http.StatusUnauthorized)
 		return
 	}
 
-	// Verify the command token matches our signing key
-	if cmd.Token != a.config.SigningKey {
-		a.sendErrorResponse(w, "Invalid token", http.StatusUnauthorized)
+	cmd, err := slack.SlashCommandParse(r)
+	if err != nil {
+		a.sendErrorResponse(w, "Invalid command format", http.StatusBadRequest)
 		return
 	}
 
@@ -164,12 +172,12 @@ func (a *SlackAdapter) verifySlackSignature(r *http.Request, body []byte) error 
 	// Verify timestamp is within 5 minutes
 	ts, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid timestamp")
+		return fmt.Errorf("Invalid timestamp")
 	}
 
 	now := time.Now().Unix()
 	if math.Abs(float64(now-ts)) > 300 {
-		return fmt.Errorf("request timestamp is too old")
+		return fmt.Errorf("Request timestamp is too old")
 	}
 
 	// Create signature
@@ -179,7 +187,7 @@ func (a *SlackAdapter) verifySlackSignature(r *http.Request, body []byte) error 
 	expectedSignature := fmt.Sprintf("v0=%x", mac.Sum(nil))
 
 	if !hmac.Equal([]byte(expectedSignature), []byte(slackSignature)) {
-		return fmt.Errorf("invalid signature")
+		return fmt.Errorf("Invalid signature")
 	}
 
 	return nil
@@ -203,22 +211,21 @@ func (a *SlackAdapter) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse webhook payload
+	// Parse payload
 	var payload struct {
 		Type      string                 `json:"type"`
 		Event     map[string]interface{} `json:"event"`
 		TeamID    string                 `json:"team_id"`
 		APIAppID  string                 `json:"api_app_id"`
-		Token     string                 `json:"token"`
-		Challenge string                 `json:"challenge"` // For URL verification
+		Challenge string                 `json:"challenge"`
 	}
 
 	if err := json.Unmarshal(body, &payload); err != nil {
-		a.sendErrorResponse(w, "Invalid JSON payload", http.StatusBadRequest)
+		a.sendErrorResponse(w, "Failed to parse webhook payload", http.StatusBadRequest)
 		return
 	}
 
-	// Handle URL verification challenge
+	// Handle URL verification
 	if payload.Type == "url_verification" {
 		response := map[string]string{"challenge": payload.Challenge}
 		if err := json.NewEncoder(w).Encode(response); err != nil {
@@ -234,12 +241,15 @@ func (a *SlackAdapter) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send response
+	// Send success response
 	response := map[string]interface{}{
 		"status":  "success",
 		"message": "Webhook processed successfully",
-		"details": result,
 	}
+	if result != nil {
+		response["details"] = result
+	}
+
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		a.logger.Error("failed to encode webhook response", zap.Error(err))
 	}
@@ -250,39 +260,50 @@ func (a *SlackAdapter) processWebhookEvent(payload *struct {
 	Event     map[string]interface{} `json:"event"`
 	TeamID    string                 `json:"team_id"`
 	APIAppID  string                 `json:"api_app_id"`
-	Token     string                 `json:"token"`
 	Challenge string                 `json:"challenge"`
 }) (*domain.CommandResult, error) {
-	// Extract workflow step if present
-	if payload.Type == "workflow_step_execute" {
-		if event, ok := payload.Event["workflow_step"].(map[string]interface{}); ok {
-			inputs, ok := event["inputs"].(map[string]interface{})
-			if !ok {
-				return nil, fmt.Errorf("invalid workflow step inputs")
-			}
-
-			// Convert workflow step to domain command
-			cmd := &domain.Command{
-				Type:       domain.CommandTypeVerifyRepo,
-				Parameters: inputs,
-				Source: domain.CommandSource{
-					Platform:  "slack",
-					ChannelID: payload.TeamID, // Using team ID as channel for workflow steps
-				},
-				User: domain.User{
-					ID:       payload.APIAppID,
-					Platform: "slack",
-				},
-				Timestamp: time.Now(),
-			}
-
-			// Process the command
-			return a.processor.ProcessCommand(context.Background(), cmd)
-		}
+	if payload.Type != "workflow_step_execute" {
+		return nil, fmt.Errorf("unsupported event type: %s", payload.Type)
 	}
 
-	return &domain.CommandResult{
-		Status:  "success",
-		Message: "Event acknowledged",
-	}, nil
+	workflowStep, ok := payload.Event["workflow_step"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid workflow step format")
+	}
+
+	inputs, ok := workflowStep["inputs"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid workflow step inputs")
+	}
+
+	repository, ok := inputs["repository"].(string)
+	if !ok {
+		return nil, fmt.Errorf("repository input is required")
+	}
+
+	action, ok := inputs["action"].(string)
+	if !ok {
+		return nil, fmt.Errorf("action input is required")
+	}
+
+	// Create and process command
+	cmd := &domain.Command{
+		Type: domain.CommandTypeVerifyRepo,
+		Parameters: map[string]interface{}{
+			"repository_name": repository,
+			"action":          action,
+		},
+		User: domain.User{
+			ID:       "workflow",
+			Platform: "slack",
+		},
+		Source: domain.CommandSource{
+			Platform:   "slack",
+			WorkflowID: workflowStep["workflow_id"].(string),
+			StepID:     workflowStep["step_id"].(string),
+		},
+		Timestamp: time.Now(),
+	}
+
+	return a.processor.ProcessCommand(context.Background(), cmd)
 }

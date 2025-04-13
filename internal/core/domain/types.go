@@ -13,9 +13,11 @@ type Command struct {
 }
 
 type CommandSource struct {
-	Platform  string // "slack", "teams", etc.
-	ChannelID string
-	MessageID string
+	Platform   string // "slack", "teams", etc.
+	ChannelID  string
+	MessageID  string
+	WorkflowID string // ID of the workflow if command is from a workflow
+	StepID     string // ID of the workflow step if command is from a workflow
 }
 
 type User struct {

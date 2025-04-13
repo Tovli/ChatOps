@@ -18,6 +18,7 @@ import (
 
 	"github.com/Tovli/chatops/internal/adapters/github"
 	"github.com/Tovli/chatops/internal/adapters/slack"
+	"github.com/Tovli/chatops/internal/core/domain"
 	"github.com/Tovli/chatops/internal/core/services"
 	"github.com/Tovli/chatops/internal/infrastructure/config"
 	"github.com/Tovli/chatops/internal/infrastructure/env"
@@ -127,13 +128,27 @@ func TestSlackCommandsEndpoint(t *testing.T) {
 	testServer := httptest.NewServer(appRouter)
 	defer testServer.Close()
 
+	// Initialize test data
+	ctx := context.Background()
+	testRepo := &domain.Repository{
+		ID:            "test-repo-id",
+		Name:          "test-repo",
+		URL:           "https://github.com/Tovli/test-repo",
+		DefaultBranch: "main",
+		AddedBy:       "U123456",
+		AddedAt:       time.Now(),
+		Pipelines:     []domain.Pipeline{},
+	}
+	err := server.storage.AddRepository(ctx, testRepo)
+	require.NoError(t, err)
+
 	t.Run("Add GitHub Repository Command", func(t *testing.T) {
 		// Use a real public GitHub repository for testing
 		repoURL := "https://github.com/Tovli/ChatOps"
 
 		// Prepare the Slack slash command payload
 		form := url.Values{}
-		form.Add("token", "test-signing-key") // Using signing key as verification token
+		form.Add("token", "test-token")
 		form.Add("team_id", "T123456")
 		form.Add("team_domain", "test-team")
 		form.Add("channel_id", "C123456")
@@ -145,14 +160,25 @@ func TestSlackCommandsEndpoint(t *testing.T) {
 		form.Add("response_url", "https://hooks.slack.com/commands/123456")
 		form.Add("trigger_id", "123456.123456")
 
-		// Send request to the endpoint
+		// Create request
+		formEncoded := form.Encode()
 		req, err := http.NewRequest(
 			"POST",
 			testServer.URL+"/api/v1/slack/commands",
-			strings.NewReader(form.Encode()),
+			strings.NewReader(formEncoded),
 		)
 		require.NoError(t, err)
+
+		// Add Slack signature headers
+		timestamp := fmt.Sprintf("%d", time.Now().Unix())
+		baseString := fmt.Sprintf("v0:%s:%s", timestamp, formEncoded)
+		mac := hmac.New(sha256.New, []byte(env.GetEnvWithDefault("CHATOPS_SLACK_SIGNING_KEY", "")))
+		mac.Write([]byte(baseString))
+		signature := fmt.Sprintf("v0=%x", mac.Sum(nil))
+
 		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Add("X-Slack-Request-Timestamp", timestamp)
+		req.Header.Add("X-Slack-Signature", signature)
 
 		// Perform the request
 		client := &http.Client{}
@@ -181,70 +207,81 @@ func TestSlackCommandsEndpoint(t *testing.T) {
 
 	t.Run("Invalid Command Format", func(t *testing.T) {
 		form := url.Values{}
-		form.Add("token", "test-signing-key") // Using signing key as verification token
+		form.Add("token", "test-token")
 		form.Add("team_id", "T123456")
 		form.Add("user_id", "U123456")
 		form.Add("command", "/chatops")
 		form.Add("text", "invalid") // Invalid command format
 
+		// Create request
+		formEncoded := form.Encode()
 		req, err := http.NewRequest(
 			"POST",
 			testServer.URL+"/api/v1/slack/commands",
-			strings.NewReader(form.Encode()),
+			strings.NewReader(formEncoded),
 		)
 		require.NoError(t, err)
+
+		// Add Slack signature headers
+		timestamp := fmt.Sprintf("%d", time.Now().Unix())
+		baseString := fmt.Sprintf("v0:%s:%s", timestamp, formEncoded)
+		mac := hmac.New(sha256.New, []byte(env.GetEnvWithDefault("CHATOPS_SLACK_SIGNING_KEY", "")))
+		mac.Write([]byte(baseString))
+		signature := fmt.Sprintf("v0=%x", mac.Sum(nil))
+
 		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Add("X-Slack-Request-Timestamp", timestamp)
+		req.Header.Add("X-Slack-Signature", signature)
 
 		client := &http.Client{}
 		resp, err := client.Do(req)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
-		// Check response
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 
-		// Decode error response
 		var response map[string]interface{}
 		err = json.NewDecoder(resp.Body).Decode(&response)
 		require.NoError(t, err)
 
-		// Verify error response format
 		assert.Equal(t, "error", response["status"])
 		assert.Contains(t, response["message"], "invalid command format")
 	})
 
 	t.Run("Invalid Token", func(t *testing.T) {
 		form := url.Values{}
-		form.Add("token", "wrong-token")
+		form.Add("token", "invalid_token")
 		form.Add("team_id", "T123456")
 		form.Add("user_id", "U123456")
 		form.Add("command", "/chatops")
-		form.Add("text", "manage https://github.com/test/test-repo")
+		form.Add("text", "manage https://github.com/test/repo")
 
+		formEncoded := form.Encode()
 		req, err := http.NewRequest(
 			"POST",
 			testServer.URL+"/api/v1/slack/commands",
-			strings.NewReader(form.Encode()),
+			strings.NewReader(formEncoded),
 		)
 		require.NoError(t, err)
+
+		// Add invalid signature
 		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Add("X-Slack-Request-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		req.Header.Add("X-Slack-Signature", "v0=invalid")
 
 		client := &http.Client{}
 		resp, err := client.Do(req)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
-		// Check response
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
-		// Decode error response
 		var response map[string]interface{}
 		err = json.NewDecoder(resp.Body).Decode(&response)
 		require.NoError(t, err)
 
-		// Verify error response format
 		assert.Equal(t, "error", response["status"])
-		assert.Equal(t, "Invalid token", response["message"])
+		assert.Equal(t, "Invalid signature", response["message"])
 	})
 }
 
@@ -256,59 +293,57 @@ func TestSlackWebhookEndpoint(t *testing.T) {
 	testServer := httptest.NewServer(appRouter)
 	defer testServer.Close()
 
+	// Initialize test data
+	ctx := context.Background()
+	testRepo := &domain.Repository{
+		ID:            "test-repo-id",
+		Name:          "test-repo",
+		URL:           "https://github.com/Tovli/test-repo",
+		DefaultBranch: "main",
+		AddedBy:       "workflow",
+		AddedAt:       time.Now(),
+		Pipelines:     []domain.Pipeline{},
+	}
+	err := server.storage.AddRepository(ctx, testRepo)
+	require.NoError(t, err)
+
 	t.Run("Valid Webhook Request", func(t *testing.T) {
-		// Prepare webhook payload
 		payload := map[string]interface{}{
 			"type": "workflow_step_execute",
 			"event": map[string]interface{}{
 				"workflow_step": map[string]interface{}{
-					"workflow_id": "W123456",
-					"step_id":     "S123456",
-				},
-				"inputs": map[string]interface{}{
-					"repository": "Tovli/ChatOps",
-					"action":     "verify",
+					"workflow_id": "123456",
+					"step_id":     "abc123",
+					"inputs": map[string]interface{}{
+						"repository": "test-repo",
+						"action":     "verify",
+					},
 				},
 			},
-			"team_id":    "T123456",
-			"api_app_id": "A123456",
-			"token":      env.GetEnvWithDefault("CHATOPS_SLACK_SIGNING_KEY", ""),
 		}
 
-		// Convert payload to JSON
-		payloadBytes, err := json.Marshal(payload)
+		body, err := json.Marshal(payload)
 		require.NoError(t, err)
 
-		// Create timestamp for signature
-		timestamp := fmt.Sprintf("%d", time.Now().Unix())
+		req, err := http.NewRequest("POST", testServer.URL+"/api/v1/slack/webhooks", bytes.NewBuffer(body))
+		require.NoError(t, err)
 
-		// Create Slack signature
-		signingSecret := env.GetEnvWithDefault("CHATOPS_SLACK_SIGNING_KEY", "")
-		baseString := fmt.Sprintf("v0:%s:%s", timestamp, string(payloadBytes))
-		mac := hmac.New(sha256.New, []byte(signingSecret))
+		// Add Slack signature headers
+		timestamp := fmt.Sprintf("%d", time.Now().Unix())
+		baseString := fmt.Sprintf("v0:%s:%s", timestamp, string(body))
+		mac := hmac.New(sha256.New, []byte(env.GetEnvWithDefault("CHATOPS_SLACK_SIGNING_KEY", "")))
 		mac.Write([]byte(baseString))
 		signature := fmt.Sprintf("v0=%x", mac.Sum(nil))
 
-		// Create request
-		req, err := http.NewRequest(
-			"POST",
-			testServer.URL+"/api/v1/slack/webhooks",
-			bytes.NewReader(payloadBytes),
-		)
-		require.NoError(t, err)
+		req.Header.Add("Content-Type", "application/json")
+		req.Header.Add("X-Slack-Request-Timestamp", timestamp)
+		req.Header.Add("X-Slack-Signature", signature)
 
-		// Add required headers
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Slack-Request-Timestamp", timestamp)
-		req.Header.Set("X-Slack-Signature", signature)
-
-		// Perform request
 		client := &http.Client{}
 		resp, err := client.Do(req)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
-		// Verify response
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		var response map[string]interface{}
@@ -321,28 +356,20 @@ func TestSlackWebhookEndpoint(t *testing.T) {
 
 	t.Run("Invalid Signature", func(t *testing.T) {
 		payload := map[string]interface{}{
-			"type": "workflow_step_execute",
-			"event": map[string]interface{}{
-				"workflow_step": map[string]interface{}{
-					"workflow_id": "W123456",
-					"step_id":     "S123456",
-				},
-			},
+			"type":  "workflow_step_execute",
+			"event": map[string]interface{}{},
 		}
 
-		payloadBytes, err := json.Marshal(payload)
+		body, err := json.Marshal(payload)
 		require.NoError(t, err)
 
-		req, err := http.NewRequest(
-			"POST",
-			testServer.URL+"/api/v1/slack/webhooks",
-			bytes.NewReader(payloadBytes),
-		)
+		req, err := http.NewRequest("POST", testServer.URL+"/api/v1/slack/webhooks", bytes.NewBuffer(body))
 		require.NoError(t, err)
 
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Slack-Request-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-		req.Header.Set("X-Slack-Signature", "invalid_signature")
+		// Add invalid signature
+		req.Header.Add("Content-Type", "application/json")
+		req.Header.Add("X-Slack-Request-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		req.Header.Add("X-Slack-Signature", "v0=invalid")
 
 		client := &http.Client{}
 		resp, err := client.Do(req)
@@ -361,38 +388,26 @@ func TestSlackWebhookEndpoint(t *testing.T) {
 
 	t.Run("Expired Timestamp", func(t *testing.T) {
 		payload := map[string]interface{}{
-			"type": "workflow_step_execute",
-			"event": map[string]interface{}{
-				"workflow_step": map[string]interface{}{
-					"workflow_id": "W123456",
-					"step_id":     "S123456",
-				},
-			},
+			"type":  "workflow_step_execute",
+			"event": map[string]interface{}{},
 		}
 
-		payloadBytes, err := json.Marshal(payload)
+		body, err := json.Marshal(payload)
 		require.NoError(t, err)
 
-		// Use a timestamp from 6 minutes ago (Slack requires within 5 minutes)
-		oldTimestamp := fmt.Sprintf("%d", time.Now().Add(-6*time.Minute).Unix())
+		req, err := http.NewRequest("POST", testServer.URL+"/api/v1/slack/webhooks", bytes.NewBuffer(body))
+		require.NoError(t, err)
 
-		// Create signature with old timestamp
-		signingSecret := env.GetEnvWithDefault("CHATOPS_SLACK_SIGNING_KEY", "")
-		baseString := fmt.Sprintf("v0:%s:%s", oldTimestamp, string(payloadBytes))
-		mac := hmac.New(sha256.New, []byte(signingSecret))
+		// Add expired timestamp
+		oldTimestamp := fmt.Sprintf("%d", time.Now().Add(-6*time.Minute).Unix())
+		baseString := fmt.Sprintf("v0:%s:%s", oldTimestamp, string(body))
+		mac := hmac.New(sha256.New, []byte(env.GetEnvWithDefault("CHATOPS_SLACK_SIGNING_KEY", "")))
 		mac.Write([]byte(baseString))
 		signature := fmt.Sprintf("v0=%x", mac.Sum(nil))
 
-		req, err := http.NewRequest(
-			"POST",
-			testServer.URL+"/api/v1/slack/webhooks",
-			bytes.NewReader(payloadBytes),
-		)
-		require.NoError(t, err)
-
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Slack-Request-Timestamp", oldTimestamp)
-		req.Header.Set("X-Slack-Signature", signature)
+		req.Header.Add("Content-Type", "application/json")
+		req.Header.Add("X-Slack-Request-Timestamp", oldTimestamp)
+		req.Header.Add("X-Slack-Signature", signature)
 
 		client := &http.Client{}
 		resp, err := client.Do(req)

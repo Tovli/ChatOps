@@ -16,19 +16,12 @@ func (m *MockGitHubAdapter) GetRepositoryDetails(ctx context.Context, url string
 	if m.GetRepositoryDetailsFn != nil {
 		return m.GetRepositoryDetailsFn(ctx, url)
 	}
-
-	// Default implementation for testing
 	return &domain.Repository{
-		Name:          "test-repo",
+		ID:            "mock-repo-id",
+		Name:          "ChatOps",
 		URL:           url,
 		DefaultBranch: "main",
-		Pipelines: []domain.Pipeline{
-			{
-				Name:      "CI",
-				Path:      ".github/workflows/ci.yml",
-				IsDefault: true,
-			},
-		},
+		Pipelines:     []domain.Pipeline{},
 	}, nil
 }
 
@@ -36,7 +29,6 @@ func (m *MockGitHubAdapter) TriggerWorkflow(ctx context.Context, trigger *domain
 	if m.TriggerWorkflowFn != nil {
 		return m.TriggerWorkflowFn(ctx, trigger)
 	}
-
 	return &domain.CommandResult{
 		Status:  "success",
 		Message: "Workflow triggered successfully",

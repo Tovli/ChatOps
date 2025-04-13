@@ -28,10 +28,10 @@ type Attachment struct {
 type Service interface {
 	// Initialize sets up the messenger service
 	Initialize(ctx context.Context) error
-	
+
 	// HandleMessage processes incoming messages
 	HandleMessage(ctx context.Context, msg Message) error
-	
+
 	// SendResponse sends a response back to the platform
 	SendResponse(ctx context.Context, channelID string, response Response) error
-} 
+}

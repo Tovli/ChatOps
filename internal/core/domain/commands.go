@@ -9,4 +9,4 @@ type RepositoryCommand struct {
 	Command
 	RepositoryURL  string
 	RepositoryName string
-} 
+}
