@@ -76,4 +76,44 @@ Please read our [Contributing Guide](.github/CONTRIBUTING.md) and [Code of Condu
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details 
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
+
+## Development Setup
+
+### Environment Variables
+
+1. Copy the example environment file:
+```bash
+cp .env.example .env
+```
+
+2. Set up your GitHub token:
+   - Go to https://github.com/settings/tokens
+   - Create a new token with `repo` and `workflow` scopes
+   - Add the token to your `.env` file:
+     ```
+     GITHUB_TOKEN=your_token_here
+     ```
+
+3. Load environment variables:
+   ```bash
+   # Linux/macOS
+   source .env
+
+   # Windows (PowerShell)
+   Get-Content .env | ForEach-Object {
+     if ($_ -match '^([^#=]+)=(.*)$') {
+       $env:$($matches[1]) = $matches[2]
+     }
+   }
+   ```
+
+### Running Tests
+
+Make sure your environment variables are set before running tests:
+
+```bash
+go test ./internal/tests/integration -v
+```
+
+Note: Never commit your `.env` file or tokens to the repository. The `.env` file is listed in `.gitignore` to prevent accidental commits. 

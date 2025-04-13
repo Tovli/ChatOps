@@ -47,33 +47,53 @@ func NewSlackAdapter(logger *zap.Logger, config *config.SlackConfig, processor *
 }
 
 func (a *SlackAdapter) HandleSlashCommand(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	cmd, err := slack.SlashCommandParse(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		a.sendErrorResponse(w, "Invalid slash command", http.StatusBadRequest)
+		return
+	}
+
+	// Verify the command token matches our signing key
+	if cmd.Token != a.config.SigningKey {
+		a.sendErrorResponse(w, "Invalid token", http.StatusUnauthorized)
 		return
 	}
 
 	domainCmd, err := a.parseCommand(cmd)
 	if err != nil {
-		// Return error message to Slack
+		a.sendErrorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	result, err := a.processor.ProcessCommand(r.Context(), domainCmd)
 	if err != nil {
-		// Handle error
+		a.sendErrorResponse(w, fmt.Sprintf("Failed to process command: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	response := a.buildSlackResponse(result)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		a.logger.Error("failed to encode response", zap.Error(err))
+	}
+}
+
+func (a *SlackAdapter) sendErrorResponse(w http.ResponseWriter, message string, statusCode int) {
+	w.WriteHeader(statusCode)
+	response := map[string]interface{}{
+		"status":  "error",
+		"message": message,
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		a.logger.Error("failed to encode error response", zap.Error(err))
+	}
 }
 
 func (a *SlackAdapter) parseCommand(cmd slack.SlashCommand) (*domain.Command, error) {
 	parts := strings.Fields(cmd.Text)
 	if len(parts) < 2 {
-		return nil, fmt.Errorf("invalid command format")
+		return nil, fmt.Errorf("invalid command format: expected at least 2 parts, got %d", len(parts))
 	}
 
 	action := parts[0]

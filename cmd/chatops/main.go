@@ -15,9 +15,8 @@ import (
 	"github.com/Tovli/chatops/internal/core/services"
 	"github.com/Tovli/chatops/internal/infrastructure/config"
 	"github.com/Tovli/chatops/internal/infrastructure/health"
-	"github.com/Tovli/chatops/internal/infrastructure/middleware"
+	"github.com/Tovli/chatops/internal/infrastructure/router"
 	"github.com/Tovli/chatops/internal/infrastructure/storage/postgres"
-	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 )
 
@@ -77,23 +76,21 @@ func main() {
 		logger.Fatal("failed to create Slack adapter", zap.Error(err))
 	}
 
-	// Initialize router with middleware
-	router := mux.NewRouter()
-	router.Use(middleware.LoggingMiddleware(logger))
-
-	// Health check endpoints
+	// Initialize health handler
 	healthHandler := health.NewHandler(logger, db)
-	router.HandleFunc("/health", healthHandler.HealthCheck).Methods("GET")
-	router.HandleFunc("/health/live", healthHandler.LivenessCheck).Methods("GET")
 
-	// API routes
-	apiRouter := router.PathPrefix("/api/v1").Subrouter()
-	apiRouter.HandleFunc("/slack/commands", slackAdapter.HandleSlashCommand).Methods("POST")
+	// Initialize router
+	routerConfig := &router.Config{
+		Logger:        logger,
+		SlackAdapter:  slackAdapter,
+		HealthHandler: healthHandler,
+	}
+	appRouter := router.NewRouter(routerConfig)
 
 	// Initialize HTTP server
 	srv := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:      router,
+		Handler:      appRouter,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
